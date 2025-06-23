@@ -5,34 +5,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Viberr Trainer</title>
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .main-loading-container {
+            width: 80%;
+            margin: 20px auto;
+            background: #eee;
+            border-radius: 8px;
+            height: 24px;
+            overflow: hidden;
+            display: none;
+        }
+        .main-loading-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db 30%, #eee 50%, #3498db 70%);
+            background-size: 200% 100%;
+            animation: indeterminate 1.5s linear infinite;
+            width: 100%;
+        }
+        @keyframes indeterminate {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .main-loading-label {
+            text-align: center;
+            font-weight: bold;
+            margin-top: 8px;
+            color: #3498db;
+            display: none;
+        }
+    </style>
     <script>
         function showLoading() {
             document.getElementById('loadingMsg').style.display = 'block';
-            // Show selected models
-            var selected = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(e => e.nextSibling.textContent.trim());
-            document.getElementById('modelsInUse').textContent = 'Models in use: ' + selected.join(', ');
+            // Show selected model
+            var selected = document.querySelector('input[name="lang"]:checked');
+            document.getElementById('modelsInUse').textContent = 'Model in use: ' + (selected ? selected.nextSibling.textContent.trim() : '');
             document.getElementById('modelsInUse').style.display = 'block';
+            // Show loading bar for model loading
+            document.getElementById('mainLoadingContainer').style.display = 'block';
+            document.getElementById('mainLoadingLabel').style.display = 'block';
         }
     </script>
 </head>
 <body>
     <h1>Welcome to Viberr Trainer</h1>
     <form id="modelForm" action="/listen" method="get" onsubmit="showLoading()">
-        <label>Choose Language Models (select one or more):</label><br>
-        <input type="checkbox" name="lang" value="en" checked> English<br>
-        <input type="checkbox" name="lang" value="hi"> Hindi<br>
-        <input type="checkbox" name="lang" value="zh"> Chinese<br>
-        <input type="checkbox" name="lang" value="ru"> Russian<br>
-        <input type="checkbox" name="lang" value="fr"> French<br>
-        <input type="checkbox" name="lang" value="de"> German<br>
-        <input type="checkbox" name="lang" value="es"> Spanish<br>
-        <input type="checkbox" name="lang" value="pt"> Portuguese<br>
-        <input type="checkbox" name="lang" value="ja"> Japanese<br>
-        <input type="checkbox" name="lang" value="it"> Italian<br>
+        <label>Choose Language Model (select one):</label><br>
+        <input type="radio" name="lang" value="en" checked> English<br>
+        <input type="radio" name="lang" value="hi"> Hindi<br>
+        <input type="radio" name="lang" value="zh"> Chinese<br>
+        <input type="radio" name="lang" value="ru"> Russian<br>
+        <input type="radio" name="lang" value="fr"> French<br>
+        <input type="radio" name="lang" value="de"> German<br>
+        <input type="radio" name="lang" value="es"> Spanish<br>
+        <input type="radio" name="lang" value="pt"> Portuguese<br>
+        <input type="radio" name="lang" value="ja"> Japanese<br>
+        <input type="radio" name="lang" value="it"> Italian<br>
         <br>
         <button type="submit">Start Listening</button>
     </form>
-    <p>You can select multiple languages. The system will run all selected models in parallel and return the most relevant result in English.</p>
+    <div class="main-loading-container" id="mainLoadingContainer">
+        <div class="main-loading-bar"></div>
+    </div>
+    <div class="main-loading-label" id="mainLoadingLabel">Loading model into memory...</div>
+    <p>You can select only one language. The system will run the selected model and return the result in English if needed.</p>
     <p id="loadingMsg" style="display:none;color:blue;font-weight:bold;">If this is your first time using a language, the model will be downloaded and extracted. Please wait, this may take a few minutes...</p>
     <p id="modelsInUse" style="display:none;color:green;font-weight:bold;"></p>
     <script src="/static/script.js"></script>

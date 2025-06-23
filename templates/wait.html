@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Loading Model...</title>
-    <meta http-equiv="refresh" content="5;url={{ next_url }}">
     <style>
         .spinner {
             margin: 40px auto;
@@ -18,11 +17,108 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .progress-container {
+            width: 80%;
+            margin: 20px auto;
+            background: #eee;
+            border-radius: 8px;
+            height: 24px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #3498db;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .progress-label {
+            text-align: center;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+        .indeterminate {
+            background: linear-gradient(90deg, #3498db 30%, #eee 50%, #3498db 70%);
+            background-size: 200% 100%;
+            animation: indeterminate 1.5s linear infinite;
+        }
+        @keyframes indeterminate {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
     </style>
+    <script>
+        // Build the AJAX polling URL based on the current URL
+        function getPollingUrl() {
+            const url = new URL(window.location.href);
+            url.searchParams.set('waited', '1');
+            url.searchParams.set('ajax', '1');
+            return url.pathname + url.search;
+        }
+        function getProgressUrl() {
+            const url = new URL(window.location.href);
+            return '/model_progress?lang=' + (url.searchParams.get('lang') || 'en');
+        }
+        function pollModelReady() {
+            fetch(getPollingUrl(), {cache: 'no-store'})
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.ready) {
+                        // Redirect to /listen with original params (remove ajax=1)
+                        const url = new URL(window.location.href);
+                        url.searchParams.delete('ajax');
+                        window.location.href = url.pathname + url.search;
+                    } else {
+                        setTimeout(pollModelReady, 1000);
+                    }
+                })
+                .catch(() => setTimeout(pollModelReady, 2000));
+        }
+        function pollProgress() {
+            fetch(getProgressUrl(), {cache: 'no-store'})
+                .then(response => response.json())
+                .then(data => {
+                    const bar = document.getElementById('progressBar');
+                    const label = document.getElementById('progressLabel');
+                    const spinner = document.querySelector('.spinner');
+                    if (data.status === 'downloading' || data.status === 'extracting') {
+                        bar.classList.remove('indeterminate');
+                        bar.style.width = data.progress + '%';
+                        label.textContent = (data.status === 'downloading' ? 'Downloading model...' : 'Extracting model...') + ' ' + data.progress + '%';
+                        bar.style.display = '';
+                        spinner.style.display = '';
+                    } else if (data.status === 'ready') {
+                        bar.classList.remove('indeterminate');
+                        bar.style.width = '100%';
+                        label.textContent = 'Model ready!';
+                        // Hide spinner and progress bar for smoother UX
+                        setTimeout(() => {
+                            bar.style.display = 'none';
+                            spinner.style.display = 'none';
+                        }, 300); // short delay for user to see 'Model ready!'
+                    } else if (data.status === 'idle') {
+                        bar.classList.add('indeterminate');
+                        bar.style.width = '100%';
+                        label.textContent = 'Loading model...';
+                        bar.style.display = '';
+                        spinner.style.display = '';
+                    }
+                    setTimeout(pollProgress, 1000);
+                })
+                .catch(() => setTimeout(pollProgress, 2000));
+        }
+        window.onload = function() {
+            pollModelReady();
+            pollProgress();
+        };
+    </script>
 </head>
 <body>
     <h2>Please wait...</h2>
     <div class="spinner"></div>
+    <div class="progress-container">
+        <div id="progressBar" class="progress-bar"></div>
+    </div>
+    <div class="progress-label" id="progressLabel">Loading model...</div>
     <p>The selected model(s) are being downloaded or loaded. This may take a few moments.</p>
     <p><b>Models in use:</b> {{ models_in_use }}</p>
     <p>You will be redirected automatically.</p>

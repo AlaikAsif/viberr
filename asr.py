@@ -1,5 +1,4 @@
 import json
-from vosk import Model, KaldiRecognizer
 import spacy
 import pyaudio
 import noisereduce as nr
@@ -10,6 +9,8 @@ import zipfile
 from googletrans import Translator
 import threading
 import subprocess
+from translate_util import translate_to_english
+from recognizer import ASR, asr_stream_listen, register_asr_instance, unregister_asr_instance, terminate_all_asr_instances
 
 LANG_MODELS = {
     'en': 'models/vosk-model-en-us-0.42-gigaspeech',
@@ -50,94 +51,90 @@ MODEL_URLS = {
     # English is always present locally
 }
 
+# Progress tracking for model downloads
+_model_progress = {}
+
+def get_model_progress(lang):
+    return _model_progress.get(lang, {"status": "idle", "progress": 0})
+
 def ensure_model_downloaded(lang):
     if lang == 'en':
         return  # English model is always present
     model_path = LANG_MODELS[lang]
-    if not os.path.exists(model_path):
-        print(f"Model for '{lang}' not found. Downloading...")
+    zip_path = f"{model_path}.zip"
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    def download_zip():
         url = MODEL_URLS[lang]
-        zip_path = f"{model_path}.zip"
         with requests.get(url, stream=True) as r:
             r.raise_for_status()
+            total = int(r.headers.get('content-length', 0))
+            downloaded = 0
+            _model_progress[lang] = {"status": "downloading", "progress": 0}
             with open(zip_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(os.path.dirname(model_path))
-        os.remove(zip_path)
-        print(f"Model for '{lang}' downloaded and extracted.")
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        percent = int(downloaded * 100 / total) if total else 0
+                        _model_progress[lang] = {"status": "downloading", "progress": percent}
+            _model_progress[lang] = {"status": "downloaded", "progress": 100}
+    extracted = False
+    if not os.path.exists(model_path) and os.path.exists(zip_path):
+        try:
+            _model_progress[lang] = {"status": "extracting", "progress": 0}
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall("models")
+            _model_progress[lang] = {"status": "ready", "progress": 100}
+            extracted = True
+        except Exception as e:
+            print(f"Error extracting model zip for '{lang}': {e}. Retrying download...")
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            download_zip()
+            try:
+                _model_progress[lang] = {"status": "extracting", "progress": 0}
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall("models")
+                _model_progress[lang] = {"status": "ready", "progress": 100}
+                extracted = True
+            except Exception as e2:
+                print(f"Failed again to extract model zip for '{lang}': {e2}")
+            finally:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+        print('models directory after extraction:', os.listdir('models'))
+    if not os.path.exists(model_path) and not extracted:
+        print(f"Model for '{lang}' not found. Downloading...")
+        download_zip()
+        try:
+            _model_progress[lang] = {"status": "extracting", "progress": 0}
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall("models")
+            _model_progress[lang] = {"status": "ready", "progress": 100}
+        except Exception as e:
+            print(f"Error extracting downloaded model zip for '{lang}': {e}")
+        finally:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        print('models directory after extraction:', os.listdir('models'))
     else:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        _model_progress[lang] = {"status": "ready", "progress": 100}
         print(f"Model for '{lang}' already exists.")
 
-class ASR:
-    def __init__(self, lang='en'):
-        ensure_model_downloaded(lang)
-        # Ensure spaCy model is installed
-        nlp_model = NLP_MODELS[lang]
-        try:
-            self.nlp = spacy.load(nlp_model)
-        except OSError:
-            print(f"spaCy model '{nlp_model}' not found. Downloading...")
-            subprocess.run(["python", "-m", "spacy", "download", nlp_model], check=True)
-            self.nlp = spacy.load(nlp_model)
-        self.model = Model(LANG_MODELS[lang])
-        self.recognizer = KaldiRecognizer(self.model, 16000)
-        self.lang = lang
-        self.translator = Translator()
-
-    def listen(self):
-        p = pyaudio.PyAudio()
-        for i in range(p.get_device_count()):
-            print(p.get_device_info_by_index(i))
-
-        stream = p.open(rate=16000, channels=1, format=pyaudio.paInt16, 
-                        input=True, output=False, frames_per_buffer=8192)
-        stream.start_stream()
-        final_text = ""
-        try:
-            while True:
-                try:
-                    data = stream.read(8192, exception_on_overflow=False)
-                    if len(data) == 0:
-                        break
-                    # Real-time noise reduction
-                    audio_chunk = np.frombuffer(data, dtype=np.int16)
-                    reduced_chunk = nr.reduce_noise(y=audio_chunk, sr=16000, stationary=True, prop_decrease=1.0)
-                    data = reduced_chunk.tobytes()
-                    if self.recognizer.AcceptWaveform(data):
-                        res = json.loads(self.recognizer.Result())
-                        print(res["text"])
-                        final_text = res["text"]
-                        if res.get("text", "").lower() == "stop listening":
-                            break
-                    else:
-                        partial_res = json.loads(self.recognizer.PartialResult())
-                        # if partial_res.get("partial"):
-                        #     print("Partial:", partial_res["partial"])
-                except OSError as e:
-                    print(f"PyAudio error: {e}")
-                except Exception as e:
-                    print(f"ASR error: {e}")
-        finally:
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-        # Translate if not English
-        translated = final_text
-        if self.lang != 'en' and final_text:
-            try:
-                translated = self.translator.translate(final_text, src=self.lang, dest='en').text
-                print(f"Translated to English: {translated}")
-            except Exception as e:
-                print(f"Translation error: {e}")
-        return final_text, translated
+def cleanup_unused_models(current_lang):
+    """
+    Terminate all running ASR instances before starting a new one.
+    """
+    terminate_all_asr_instances()
 
 def multi_asr_listen(langs):
     results = {}
     threads = []
     def run_asr(lang):
-        asr = ASR(lang)
+        # Use recognizer.ASR and pass model path
+        asr = ASR(lang, LANG_MODELS[lang])
         original, translated = asr.listen()
         print(f"ASR for {lang}: original='{original}', translated='{translated}'")
         results[lang] = (original, translated)
@@ -147,14 +144,25 @@ def multi_asr_listen(langs):
         t.start()
     for t in threads:
         t.join()
-    # Choose the most relevant (longest non-empty English translation)
+    # Always select the longest non-empty English translation (translated or original)
     best_english = ""
     for lang, (orig, trans) in results.items():
-        if lang == 'en' and orig.strip():
-            # Prefer English if available
-            best_english = orig.strip()
-            break
-        elif trans and trans.strip():
-            if len(trans.strip()) > len(best_english):
-                best_english = trans.strip()
+        candidate = trans.strip() if trans and trans.strip() else orig.strip()
+        if len(candidate) > len(best_english):
+            best_english = candidate
     return {"all_results": results, "best_english": best_english}
+
+def is_model_ready(lang):
+    """
+    Check if the Vosk model for the given language is truly ready (key file exists).
+    For most Vosk models, 'am/final.mdl' is a reliable indicator.
+    """
+    if lang == 'en':
+        return os.path.exists(LANG_MODELS['en'])
+    model_path = LANG_MODELS.get(lang)
+    if not model_path or not os.path.isdir(model_path):
+        return False
+    # Check for key file (am/final.mdl or model.conf)
+    key_file_1 = os.path.join(model_path, 'am', 'final.mdl')
+    key_file_2 = os.path.join(model_path, 'model.conf')
+    return os.path.exists(key_file_1) or os.path.exists(key_file_2)
