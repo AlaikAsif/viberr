@@ -1,0 +1,8 @@
+models/
+*.zip
+*.tar.gz
+*.tar
+__pycache__/
+*.pyc
+.env
+.DS_Store

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Loading Model...</title>
+    <meta http-equiv="refresh" content="5;url={{ next_url }}">
+    <style>
+        .spinner {
+            margin: 40px auto;
+            width: 60px;
+            height: 60px;
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h2>Please wait...</h2>
+    <div class="spinner"></div>
+    <p>The selected model(s) are being downloaded or loaded. This may take a few moments.</p>
+    <p><b>Models in use:</b> {{ models_in_use }}</p>
+    <p>You will be redirected automatically.</p>
+</body>
+</html>
