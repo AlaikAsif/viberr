@@ -33,23 +33,248 @@
             color: #3498db;
             display: none;
         }
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        #modelStatusBar { margin: 1em 0; }
+        #modelStatusText { font-size: 1.1em; margin-bottom: 0.5em; }
+        #modelProgressBar {
+            width: 100%;
+            background: #eee;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 1em;
+            display: none;
+        }
+        #modelProgressBarInner {
+            height: 20px;
+            background: #4caf50;
+            width: 0%;
+            color: #fff;
+            text-align: center;
+            line-height: 20px;
+            transition: width 0.3s;
+        }
+        .hidden {
+            display: none;
+        }
     </style>
     <script>
-        function showLoading() {
-            document.getElementById('loadingMsg').style.display = 'block';
-            // Show selected model
-            var selected = document.querySelector('input[name="lang"]:checked');
-            document.getElementById('modelsInUse').textContent = 'Model in use: ' + (selected ? selected.nextSibling.textContent.trim() : '');
-            document.getElementById('modelsInUse').style.display = 'block';
-            // Show loading bar for model loading
-            document.getElementById('mainLoadingContainer').style.display = 'block';
-            document.getElementById('mainLoadingLabel').style.display = 'block';
+        let modelReady = false;
+        let pollingStatus = false;
+
+        function getSelectedLang() {
+            const checked = document.querySelector('input[name="lang"]:checked');
+            return checked ? checked.value : 'en';
         }
+
+        function updateControls(status) {
+            console.log(`[updateControls] Updating controls based on status: ${status}`);
+            const startButton = document.getElementById('start-listening-btn');
+            const downloadButton = document.getElementById('download-btn');
+            const terminateButton = document.getElementById('terminate-btn');
+            const langRadios = document.querySelectorAll('input[name="lang"]');
+
+            // Terminate button and language radios should always be enabled.
+            if (terminateButton) terminateButton.disabled = false;
+            langRadios.forEach(radio => radio.disabled = false);
+
+            if (!startButton || !downloadButton) return;
+
+            // Hide both buttons by default, then show the correct one.
+            startButton.classList.add('hidden');
+            downloadButton.classList.add('hidden');
+
+            switch (status) {
+                case 'not_downloaded':
+                    downloadButton.classList.remove('hidden');
+                    downloadButton.disabled = false;
+                    modelReady = false;
+                    break;
+                case 'ready':
+                    startButton.classList.remove('hidden');
+                    startButton.disabled = false;
+                    modelReady = true;
+                    break;
+                case 'downloading':
+                case 'extracting':
+                    // Both buttons remain hidden, progress bar shows status.
+                    modelReady = false;
+                    break;
+                default: // Includes error states
+                    // Hide both buttons on error.
+                    modelReady = false;
+                    break;
+            }
+        }
+
+        function pollModelStatus() {
+            const lang = getSelectedLang();
+            console.log(`[pollModelStatus] Polling for language: ${lang}`);
+
+            if (lang === 'en') {
+                console.log('[pollModelStatus] English model selected, setting status to ready.');
+                const statusText = document.getElementById('modelStatusText');
+                const progressBar = document.getElementById('modelProgressBar');
+                const modelStatusBar = document.getElementById('modelStatusBar');
+
+                if (statusText) statusText.textContent = 'English model is always ready.';
+                if (progressBar) progressBar.style.display = 'none';
+                if (modelStatusBar) modelStatusBar.style.display = 'block';
+
+                updateControls('ready');
+                pollingStatus = false;
+                return;
+            }
+
+            console.log(`[pollModelStatus] Starting fetch for /model_status?lang=${lang}`);
+            pollingStatus = true;
+
+            const modelStatusBar = document.getElementById('modelStatusBar');
+            if (modelStatusBar) modelStatusBar.style.display = 'block';
+
+            fetch(`/model_status?lang=${lang}`)
+                .then(r => {
+                    if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+                    return r.json();
+                })
+                .then(data => {
+                    console.log(`[pollModelStatus] Model status data for ${lang}:`, data);
+                    const statusText = document.getElementById('modelStatusText');
+                    const progressBar = document.getElementById('modelProgressBar');
+                    const progressBarInner = document.getElementById('modelProgressBarInner');
+
+                    if (!statusText || !progressBar || !progressBarInner) {
+                        console.error("[pollModelStatus] Model status elements not found in DOM.");
+                        pollingStatus = false;
+                        return;
+                    }
+
+                    statusText.textContent = data.message;
+                    updateControls(data.status);
+
+                    if (data.status === 'ready' || data.status === 'not_downloaded') {
+                        progressBar.style.display = 'none';
+                        pollingStatus = false;
+                        console.log(`[pollModelStatus] Model for ${lang} is ${data.status}. Polling stopped.`);
+                    } else { // downloading, extracting
+                        progressBar.style.display = 'block';
+                        progressBarInner.style.width = (data.progress || 0) + '%';
+                        progressBarInner.textContent = (data.progress || 0) + '%';
+                        console.log(`[pollModelStatus] Model for ${lang} status: ${data.status}. Continuing polling.`);
+                        if (pollingStatus) setTimeout(pollModelStatus, 1000);
+                    }
+                })
+                .catch(error => {
+                    console.error('[pollModelStatus] Error polling model status:', error);
+                    const statusText = document.getElementById('modelStatusText');
+                    if (statusText) statusText.textContent = 'Error checking model status.';
+                    updateControls('error');
+                    if (pollingStatus) setTimeout(pollModelStatus, 5000);
+                });
+        }
+
+        // Poll the download progress specifically until the model is ready
+        function pollDownloadProgress() {
+            const lang = getSelectedLang();
+            fetch(`/model_status?lang=${lang}`)
+                .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+                .then(data => {
+                    const progressBar = document.getElementById('modelProgressBar');
+                    const progressBarInner = document.getElementById('modelProgressBarInner');
+                    if (data.status === 'downloading' || data.status === 'extracting') {
+                        progressBar.style.display = 'block';
+                        progressBarInner.style.width = (data.progress || 0) + '%';
+                        progressBarInner.textContent = (data.progress || 0) + '%';
+                        setTimeout(pollDownloadProgress, 1000);
+                    } else if (data.status === 'ready') {
+                        progressBar.style.display = 'none';
+                        updateControls('ready');
+                    } else {
+                        // still not started, try again shortly
+                        setTimeout(pollDownloadProgress, 1000);
+                    }
+                })
+                .catch(() => { setTimeout(pollDownloadProgress, 2000); });
+        }
+
+        window.onload = function() {
+            console.log('window.onload fired.');
+            // Initialize controls for default state: show download button for non-English
+            updateControls('not_downloaded');
+            pollModelStatus(); // Initial status check
+
+            document.querySelectorAll('input[name="lang"]').forEach(radio => {
+                radio.addEventListener('change', () => {
+                    console.log('Language radio button changed.');
+                    const selectedLang = getSelectedLang();
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('lang', selectedLang);
+                    window.history.pushState({}, '', url);
+
+                    pollingStatus = false;
+                    setTimeout(pollModelStatus, 100);
+                });
+            });
+
+            document.getElementById('start-listening-btn').onclick = function() {
+                console.log('[start-listening-btn.onclick] Model is ready. Submitting form to /recognize.');
+                document.getElementById('modelForm').submit();
+            };
+
+            document.getElementById('download-btn').onclick = function() {
+                const lang = getSelectedLang();
+                console.log(`[download-btn.onclick] Clicked. Lang: ${lang}. Sending POST to /listen to start download.`);
+                updateControls('downloading');
+                // Show status bar and progress immediately
+                document.getElementById('modelStatusBar').style.display = 'block';
+                document.getElementById('modelProgressBar').style.display = 'block';
+                fetch('/listen', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `lang=${lang}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('[download-btn] Response from /listen:', data);
+                    pollDownloadProgress();
+                })
+                .catch(error => {
+                    console.error('Error calling /listen:', error);
+                    document.getElementById('modelStatusText').textContent = 'Error starting model download.';
+                    updateControls('not_downloaded');
+                });
+            };
+
+            document.getElementById('terminate-btn').onclick = function(e) {
+                e.preventDefault();
+                if (!confirm('Are you sure you want to terminate this instance?')) return;
+                fetch('/terminate', {method: 'POST'})
+                  .then(response => response.json())
+                  .then(data => {
+                    if (document.getElementById('mainLoadingContainer')) document.getElementById('mainLoadingContainer').style.display = 'none';
+                    if (document.getElementById('mainLoadingLabel')) document.getElementById('mainLoadingLabel').style.display = 'none';
+                    document.getElementById('modelForm').querySelectorAll('input,button').forEach(el => el.disabled = false);
+                    document.getElementById('terminate-btn').disabled = false;
+                    alert('Instance terminated.');
+                    window.location.href = '/';
+                  })
+                  .catch(error => {
+                    console.error('Error terminating instance:', error);
+                    alert('Failed to terminate instance.');
+                    document.getElementById('modelForm').querySelectorAll('input,button').forEach(el => el.disabled = false);
+                    document.getElementById('terminate-btn').disabled = false;
+                    window.location.href = '/';
+                  });
+            };
+        };
     </script>
 </head>
 <body>
     <h1>Welcome to Viberr Trainer</h1>
-    <form id="modelForm" action="/listen" method="get" onsubmit="showLoading()">
+    <div id="modelStatusBar">
+        <div id="modelStatusText">Checking model status...</div>
+        <div id="modelProgressBar"><div id="modelProgressBarInner">0%</div></div>
+    </div>
+    <form id="modelForm" action="/recognize" method="post">
         <label>Choose Language Model (select one):</label><br>
         <input type="radio" name="lang" value="en" checked> English<br>
         <input type="radio" name="lang" value="hi"> Hindi<br>
@@ -62,8 +287,10 @@
         <input type="radio" name="lang" value="ja"> Japanese<br>
         <input type="radio" name="lang" value="it"> Italian<br>
         <br>
-        <button type="submit">Start Listening</button>
+        <button type="button" id="start-listening-btn" class="hidden">Start Listening</button>
+        <button type="button" id="download-btn" class="hidden">Download Model</button>
     </form>
+    <button id="terminate-btn" type="button" style="background:red;color:white;margin-left:10px;">Terminate Instance</button>
     <div class="main-loading-container" id="mainLoadingContainer">
         <div class="main-loading-bar"></div>
     </div>

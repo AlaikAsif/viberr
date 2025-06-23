@@ -63,10 +63,13 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data && data.ready) {
-                        // Redirect to /listen with original params (remove ajax=1)
+                        // Show 'Model ready!' message, then redirect to /listen?lang=...
                         const url = new URL(window.location.href);
-                        url.searchParams.delete('ajax');
-                        window.location.href = url.pathname + url.search;
+                        const lang = url.searchParams.get('lang') || 'en';
+                        document.getElementById('progressLabel').textContent = 'Model ready! Redirecting...';
+                        setTimeout(() => {
+                            window.location.href = '/listen?lang=' + lang;
+                        }, 700); // short delay for user to see message
                     } else {
                         setTimeout(pollModelReady, 1000);
                     }
@@ -122,5 +125,17 @@
     <p>The selected model(s) are being downloaded or loaded. This may take a few moments.</p>
     <p><b>Models in use:</b> {{ models_in_use }}</p>
     <p>You will be redirected automatically.</p>
+    <button id="terminate-btn" style="background:red;color:white;">Terminate Instance</button>
+    <script>
+    document.getElementById('terminate-btn').onclick = function() {
+        if (!confirm('Are you sure you want to terminate this instance?')) return;
+        fetch('/terminate', {method: 'POST'})
+          .then(r => r.json())
+          .then(data => {
+            alert('Instance terminated.');
+            location.reload();
+          });
+    };
+    </script>
 </body>
 </html>

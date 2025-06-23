@@ -57,6 +57,18 @@ _model_progress = {}
 def get_model_progress(lang):
     return _model_progress.get(lang, {"status": "idle", "progress": 0})
 
+def safe_remove(path, retries=5, delay=0.2):
+    import time
+    for i in range(retries):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        except PermissionError:
+            if i == retries - 1:
+                raise
+            time.sleep(delay)
+
 def ensure_model_downloaded(lang):
     if lang == 'en':
         return  # English model is always present
@@ -88,8 +100,10 @@ def ensure_model_downloaded(lang):
             extracted = True
         except Exception as e:
             print(f"Error extracting model zip for '{lang}': {e}. Retrying download...")
-            if os.path.exists(zip_path):
-                os.remove(zip_path)
+            try:
+                safe_remove(zip_path)
+            except Exception as e_rm:
+                print(f"Failed to remove zip after extraction error: {e_rm}")
             download_zip()
             try:
                 _model_progress[lang] = {"status": "extracting", "progress": 0}
@@ -100,8 +114,10 @@ def ensure_model_downloaded(lang):
             except Exception as e2:
                 print(f"Failed again to extract model zip for '{lang}': {e2}")
             finally:
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
+                try:
+                    safe_remove(zip_path)
+                except Exception as e_rm:
+                    print(f"Failed to remove zip after second extraction error: {e_rm}")
         print('models directory after extraction:', os.listdir('models'))
     if not os.path.exists(model_path) and not extracted:
         print(f"Model for '{lang}' not found. Downloading...")
@@ -114,12 +130,17 @@ def ensure_model_downloaded(lang):
         except Exception as e:
             print(f"Error extracting downloaded model zip for '{lang}': {e}")
         finally:
-            if os.path.exists(zip_path):
-                os.remove(zip_path)
+            try:
+                safe_remove(zip_path)
+            except Exception as e_rm:
+                print(f"Failed to remove zip after download extraction error: {e_rm}")
         print('models directory after extraction:', os.listdir('models'))
     else:
         if os.path.exists(zip_path):
-            os.remove(zip_path)
+            try:
+                safe_remove(zip_path)
+            except Exception as e_rm:
+                print(f"Failed to remove zip after model already exists: {e_rm}")
         _model_progress[lang] = {"status": "ready", "progress": 100}
         print(f"Model for '{lang}' already exists.")
 
@@ -127,16 +148,21 @@ def cleanup_unused_models(current_lang):
     """
     Terminate all running ASR instances before starting a new one.
     """
+    print(f"[DEBUG] cleanup_unused_models called for current_lang={current_lang}")
     terminate_all_asr_instances()
+    print(f"[DEBUG] All ASR instances terminated.")
 
 def multi_asr_listen(langs):
+    print(f"[DEBUG] multi_asr_listen called with langs={langs}")
     results = {}
     threads = []
     def run_asr(lang):
+        current_model_path = LANG_MODELS.get(lang)
+        print(f"[DEBUG] run_asr thread for lang={lang}: preparing to call ASR constructor with model_path={current_model_path}")
         # Use recognizer.ASR and pass model path
-        asr = ASR(lang, LANG_MODELS[lang])
+        asr = ASR(lang, current_model_path)
         original, translated = asr.listen()
-        print(f"ASR for {lang}: original='{original}', translated='{translated}'")
+        print(f"[DEBUG] ASR for {lang}: original='{original}', translated='{translated}'")
         results[lang] = (original, translated)
     for lang in langs:
         t = threading.Thread(target=run_asr, args=(lang,))
@@ -150,19 +176,68 @@ def multi_asr_listen(langs):
         candidate = trans.strip() if trans and trans.strip() else orig.strip()
         if len(candidate) > len(best_english):
             best_english = candidate
+    print(f"[DEBUG] multi_asr_listen finished, best_english='{best_english}'")
     return {"all_results": results, "best_english": best_english}
 
 def is_model_ready(lang):
     """
     Check if the Vosk model for the given language is truly ready (key file exists).
     For most Vosk models, 'am/final.mdl' is a reliable indicator.
+    Also check for 'model.conf' in both root and conf/ subdir.
     """
     if lang == 'en':
         return os.path.exists(LANG_MODELS['en'])
     model_path = LANG_MODELS.get(lang)
     if not model_path or not os.path.isdir(model_path):
+        # Only log when model is actually missing (less noise for radio button clicks)
+        print(f"[DEBUG] is_model_ready for {lang}: model_path {model_path} not found or not a directory")
         return False
-    # Check for key file (am/final.mdl or model.conf)
     key_file_1 = os.path.join(model_path, 'am', 'final.mdl')
     key_file_2 = os.path.join(model_path, 'model.conf')
-    return os.path.exists(key_file_1) or os.path.exists(key_file_2)
+    key_file_3 = os.path.join(model_path, 'conf', 'model.conf')
+    ready = os.path.exists(key_file_1) or os.path.exists(key_file_2) or os.path.exists(key_file_3)
+    # Only log detailed info when something interesting happens or model is not ready
+    if not ready:
+        print(f"[DEBUG] is_model_ready for {lang}: key_file_1={key_file_1} ({os.path.exists(key_file_1)}), key_file_2={key_file_2} ({os.path.exists(key_file_2)}), key_file_3={key_file_3} ({os.path.exists(key_file_3)}), ready={ready}")
+    return ready
+
+def get_model_status_info(lang):
+    """
+    Get comprehensive model status information without triggering downloads.
+    Returns status dict with status, progress, and message.
+    """
+    if lang == 'en':
+        return {
+            'status': 'ready',
+            'progress': 100,
+            'message': 'English model is always ready.'
+        }
+    
+    if is_model_ready(lang):
+        return {
+            'status': 'ready',
+            'progress': 100,
+            'message': 'Model loaded and ready.'
+        }
+    
+    # Get current progress if not ready
+    progress_data = get_model_progress(lang)
+    # Treat any non-active states as not_downloaded so download button shows
+    raw_status = progress_data.get('status', 'not_downloaded')
+    status = raw_status if raw_status in ['downloading', 'extracting'] else 'not_downloaded'
+    progress = progress_data.get('progress', 0)
+    
+    if status == 'downloading':
+        message = f"Downloading model... {progress}%"
+    elif status == 'extracting':
+        message = f"Extracting model... {progress}%"
+    elif status == 'downloaded':
+        message = 'Model downloaded, preparing...'
+    else:
+        message = 'Model not downloaded.'
+    
+    return {
+        'status': status,
+        'progress': progress,
+        'message': message
+    }
