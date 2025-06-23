@@ -21,21 +21,29 @@
 
 ```
 VIBRA_TRAINER_WEB/
-├── app.py                     # Core backend (Flask + Vosk + Logic)
-├── README.md                  # Project details
+├── app.py                     # Flask + Vosk + simulation logic
+├── README.md                  # This file
 │
 ├── data/
-│   └── sample_words.json      # Practice words for UI trainer
+│   └── sample_words.json      # Words for training mode
 │
 ├── mappings/
-│   └── binary_map.json        # A–Z to 5-bit binary patterns
+│   └── binary_map.json        # Binary letter mapping (A–Z)
+│
+├── models/
 │
 ├── static/
-│   ├── script.js              # Frontend logic & AJAX
-│   └── style.css              # Finger animations & styles
+│   ├── script.js              # JS logic (UI, speed, animation)
+│   └── style.css              # CSS for finger animations
 │
 ├── templates/
-│   └── index.html             # Web-based trainer interface
+│   └── index.html             # Flask-rendered Trainer interface
+│
+├── viberr.git/                # Local Git repository metadata
+└── __pycache__/               # Python build cache
+```
+
+---
 ```
 
 ---
