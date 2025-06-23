@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from asr import multi_asr_listen, LANG_MODELS
 import os
@@ -32,10 +31,3 @@ def listen_route():
 
 if __name__ == '__main__':
     app.run(debug=True)
-=======
-# Entry point for the Viberr Trainer Web app
-# (Flask or similar Python web framework can be used)
-
-if __name__ == "__main__":
-    print("Viberr Trainer Web app starting...")
->>>>>>> 3f2c0e0b96799d4a834c4c8a9edefa20cbdc9252

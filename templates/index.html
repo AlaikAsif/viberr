@@ -5,9 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Viberr Trainer</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script>
+        function showLoading() {
+            document.getElementById('loadingMsg').style.display = 'block';
+            // Show selected models
+            var selected = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(e => e.nextSibling.textContent.trim());
+            document.getElementById('modelsInUse').textContent = 'Models in use: ' + selected.join(', ');
+            document.getElementById('modelsInUse').style.display = 'block';
+        }
+    </script>
 </head>
 <body>
     <h1>Welcome to Viberr Trainer</h1>
+    <form id="modelForm" action="/listen" method="get" onsubmit="showLoading()">
+        <label>Choose Language Models (select one or more):</label><br>
+        <input type="checkbox" name="lang" value="en" checked> English<br>
+        <input type="checkbox" name="lang" value="hi"> Hindi<br>
+        <input type="checkbox" name="lang" value="zh"> Chinese<br>
+        <input type="checkbox" name="lang" value="ru"> Russian<br>
+        <input type="checkbox" name="lang" value="fr"> French<br>
+        <input type="checkbox" name="lang" value="de"> German<br>
+        <input type="checkbox" name="lang" value="es"> Spanish<br>
+        <input type="checkbox" name="lang" value="pt"> Portuguese<br>
+        <input type="checkbox" name="lang" value="ja"> Japanese<br>
+        <input type="checkbox" name="lang" value="it"> Italian<br>
+        <br>
+        <button type="submit">Start Listening</button>
+    </form>
+    <p>You can select multiple languages. The system will run all selected models in parallel and return the most relevant result in English.</p>
+    <p id="loadingMsg" style="display:none;color:blue;font-weight:bold;">If this is your first time using a language, the model will be downloaded and extracted. Please wait, this may take a few minutes...</p>
+    <p id="modelsInUse" style="display:none;color:green;font-weight:bold;"></p>
     <script src="/static/script.js"></script>
 </body>
 </html>

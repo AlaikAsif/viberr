@@ -113,13 +113,8 @@ class ASR:
                             break
                     else:
                         partial_res = json.loads(self.recognizer.PartialResult())
-<<<<<<< HEAD
                         # if partial_res.get("partial"):
                         #     print("Partial:", partial_res["partial"])
-=======
-                        if partial_res.get("partial"):
-                            print("Partial:", partial_res["partial"])
->>>>>>> 3f2c0e0b96799d4a834c4c8a9edefa20cbdc9252
                 except OSError as e:
                     print(f"PyAudio error: {e}")
                 except Exception as e:
@@ -144,10 +139,7 @@ def multi_asr_listen(langs):
     def run_asr(lang):
         asr = ASR(lang)
         original, translated = asr.listen()
-<<<<<<< HEAD
         print(f"ASR for {lang}: original='{original}', translated='{translated}'")
-=======
->>>>>>> 3f2c0e0b96799d4a834c4c8a9edefa20cbdc9252
         results[lang] = (original, translated)
     for lang in langs:
         t = threading.Thread(target=run_asr, args=(lang,))
@@ -156,7 +148,6 @@ def multi_asr_listen(langs):
     for t in threads:
         t.join()
     # Choose the most relevant (longest non-empty English translation)
-<<<<<<< HEAD
     best_english = ""
     for lang, (orig, trans) in results.items():
         if lang == 'en' and orig.strip():
@@ -166,7 +157,4 @@ def multi_asr_listen(langs):
         elif trans and trans.strip():
             if len(trans.strip()) > len(best_english):
                 best_english = trans.strip()
-=======
-    best_english = max((v[1] for v in results.values()), key=lambda s: len(s.strip()) if s else 0, default="")
->>>>>>> 3f2c0e0b96799d4a834c4c8a9edefa20cbdc9252
     return {"all_results": results, "best_english": best_english}
