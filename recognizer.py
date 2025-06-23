@@ -35,6 +35,9 @@ class ASR:
             print(f"[DEBUG] ASR __init__: Attempting to load Vosk Model from path: {model_path}")
             self.model = Model(model_path)
             print(f"[DEBUG] ASR __init__: Successfully loaded Vosk Model for path: {model_path}")
+            # Signal that this model has just finished loading
+            from asr import signal_model_loaded
+            signal_model_loaded(lang)
         except Exception as e:
             print(f"[ERROR] ASR __init__: Failed to load Vosk Model from path: {model_path}. Error: {e}")
             raise RuntimeError(f"Failed to load Vosk model for language {lang} from path {model_path}") from e

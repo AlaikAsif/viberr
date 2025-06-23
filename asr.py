@@ -53,6 +53,24 @@ MODEL_URLS = {
 
 # Progress tracking for model downloads
 _model_progress = {}
+# Track recently loaded models for showing alerts
+_recently_loaded_models = set()
+_recently_loaded_lock = threading.Lock()
+
+def signal_model_loaded(lang):
+    """Signal that a model has just finished loading into memory."""
+    with _recently_loaded_lock:
+        _recently_loaded_models.add(lang)
+        print(f"[DEBUG] Model {lang} signaled as just loaded")
+
+def check_and_clear_model_loaded(lang):
+    """Check if a model was recently loaded and clear the flag."""
+    with _recently_loaded_lock:
+        if lang in _recently_loaded_models:
+            _recently_loaded_models.remove(lang)
+            print(f"[DEBUG] Model {lang} just-loaded flag cleared")
+            return True
+        return False
 
 def get_model_progress(lang):
     return _model_progress.get(lang, {"status": "idle", "progress": 0})
@@ -214,10 +232,13 @@ def get_model_status_info(lang):
         }
     
     if is_model_ready(lang):
+        # Check if this model was just loaded
+        just_loaded = check_and_clear_model_loaded(lang)
         return {
             'status': 'ready',
             'progress': 100,
-            'message': 'Model loaded and ready.'
+            'message': 'Model loaded and ready.',
+            'just_loaded': just_loaded
         }
     
     # Get current progress if not ready

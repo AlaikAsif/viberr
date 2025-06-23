@@ -54,12 +54,13 @@
             transition: width 0.3s;
         }
         .hidden {
-            display: none;
+            display: none !important;
         }
     </style>
     <script>
         let modelReady = false;
         let pollingStatus = false;
+        let listeningInProgress = false; // Track if listening is currently active
 
         function getSelectedLang() {
             const checked = document.querySelector('input[name="lang"]:checked');
@@ -91,7 +92,7 @@
                     break;
                 case 'ready':
                     startButton.classList.remove('hidden');
-                    startButton.disabled = false;
+                    startButton.disabled = listeningInProgress; // Disable if already listening
                     modelReady = true;
                     break;
                 case 'downloading':
@@ -154,6 +155,13 @@
                     if (data.status === 'ready' || data.status === 'not_downloaded') {
                         progressBar.style.display = 'none';
                         pollingStatus = false;
+                        // Show alert when model becomes ready (but not for English or not_downloaded)
+                        if (data.status === 'ready' && lang !== 'en' && data.just_loaded) {
+                            console.log(`[pollModelStatus] Model just loaded for ${lang}, showing alert`);
+                            alert(`${lang.toUpperCase()} model is now loaded and ready to use!`);
+                        } else if (data.status === 'ready' && lang !== 'en') {
+                            console.log(`[pollModelStatus] Model ready for ${lang}, but just_loaded=${data.just_loaded}`);
+                        }
                         console.log(`[pollModelStatus] Model for ${lang} is ${data.status}. Polling stopped.`);
                     } else { // downloading, extracting
                         progressBar.style.display = 'block';
@@ -172,32 +180,19 @@
                 });
         }
 
-        // Poll the download progress specifically until the model is ready
-        function pollDownloadProgress() {
-            const lang = getSelectedLang();
-            fetch(`/model_status?lang=${lang}`)
-                .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-                .then(data => {
-                    const progressBar = document.getElementById('modelProgressBar');
-                    const progressBarInner = document.getElementById('modelProgressBarInner');
-                    if (data.status === 'downloading' || data.status === 'extracting') {
-                        progressBar.style.display = 'block';
-                        progressBarInner.style.width = (data.progress || 0) + '%';
-                        progressBarInner.textContent = (data.progress || 0) + '%';
-                        setTimeout(pollDownloadProgress, 1000);
-                    } else if (data.status === 'ready') {
-                        progressBar.style.display = 'none';
-                        updateControls('ready');
-                    } else {
-                        // still not started, try again shortly
-                        setTimeout(pollDownloadProgress, 1000);
-                    }
-                })
-                .catch(() => { setTimeout(pollDownloadProgress, 2000); });
-        }
-
         window.onload = function() {
             console.log('window.onload fired.');
+            
+            // Set the correct radio button based on URL parameter on page load
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlLang = urlParams.get('lang') || 'en';
+            const radioToCheck = document.querySelector(`input[name="lang"][value="${urlLang}"]`);
+            if (radioToCheck) {
+                document.querySelectorAll('input[name="lang"]').forEach(radio => radio.checked = false);
+                radioToCheck.checked = true;
+                console.log(`[window.onload] Set radio button to ${urlLang}`);
+            }
+            
             // Initialize controls for default state: show download button for non-English
             updateControls('not_downloaded');
             pollModelStatus(); // Initial status check
@@ -216,7 +211,21 @@
             });
 
             document.getElementById('start-listening-btn').onclick = function() {
+                if (listeningInProgress) {
+                    alert('Listening is already in progress. Please wait or terminate first.');
+                    return;
+                }
+                
                 console.log('[start-listening-btn.onclick] Model is ready. Submitting form to /recognize.');
+                listeningInProgress = true;
+                updateControls('ready'); // Update button state
+                
+                // Start polling to catch when model loads into memory
+                if (!pollingStatus) {
+                    console.log('[start-listening-btn.onclick] Starting polling to catch model loading');
+                    setTimeout(pollModelStatus, 500); // Start polling after a short delay
+                }
+                
                 document.getElementById('modelForm').submit();
             };
 
@@ -224,26 +233,30 @@
                 const lang = getSelectedLang();
                 console.log(`[download-btn.onclick] Clicked. Lang: ${lang}. Sending POST to /listen to start download.`);
                 updateControls('downloading');
-                // Show status bar and progress immediately
-                document.getElementById('modelStatusBar').style.display = 'block';
-                document.getElementById('modelProgressBar').style.display = 'block';
+
                 fetch('/listen', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
                     body: `lang=${lang}`
                 })
                 .then(response => response.json())
                 .then(data => {
-                    console.log('[download-btn] Response from /listen:', data);
-                    pollDownloadProgress();
+                    console.log('[download-btn.onclick] Response from /listen:', data);
+                    if (!pollingStatus) {
+                        pollModelStatus(); // Start polling for progress
+                    }
                 })
                 .catch(error => {
                     console.error('Error calling /listen:', error);
-                    document.getElementById('modelStatusText').textContent = 'Error starting model download.';
+                    const statusText = document.getElementById('modelStatusText');
+                    if (statusText) statusText.textContent = 'Error starting model download.';
                     updateControls('not_downloaded');
                 });
             };
 
+            // Terminate instance button handler
             document.getElementById('terminate-btn').onclick = function(e) {
                 e.preventDefault();
                 if (!confirm('Are you sure you want to terminate this instance?')) return;
@@ -252,6 +265,7 @@
                   .then(data => {
                     if (document.getElementById('mainLoadingContainer')) document.getElementById('mainLoadingContainer').style.display = 'none';
                     if (document.getElementById('mainLoadingLabel')) document.getElementById('mainLoadingLabel').style.display = 'none';
+                    listeningInProgress = false; // Reset listening flag when terminated
                     document.getElementById('modelForm').querySelectorAll('input,button').forEach(el => el.disabled = false);
                     document.getElementById('terminate-btn').disabled = false;
                     alert('Instance terminated.');
@@ -276,16 +290,16 @@
     </div>
     <form id="modelForm" action="/recognize" method="post">
         <label>Choose Language Model (select one):</label><br>
-        <input type="radio" name="lang" value="en" checked> English<br>
-        <input type="radio" name="lang" value="hi"> Hindi<br>
-        <input type="radio" name="lang" value="zh"> Chinese<br>
-        <input type="radio" name="lang" value="ru"> Russian<br>
-        <input type="radio" name="lang" value="fr"> French<br>
-        <input type="radio" name="lang" value="de"> German<br>
-        <input type="radio" name="lang" value="es"> Spanish<br>
-        <input type="radio" name="lang" value="pt"> Portuguese<br>
-        <input type="radio" name="lang" value="ja"> Japanese<br>
-        <input type="radio" name="lang" value="it"> Italian<br>
+        <input type="radio" name="lang" value="en" {% if lang == 'en' %}checked{% endif %}> English<br>
+        <input type="radio" name="lang" value="hi" {% if lang == 'hi' %}checked{% endif %}> Hindi<br>
+        <input type="radio" name="lang" value="zh" {% if lang == 'zh' %}checked{% endif %}> Chinese<br>
+        <input type="radio" name="lang" value="ru" {% if lang == 'ru' %}checked{% endif %}> Russian<br>
+        <input type="radio" name="lang" value="fr" {% if lang == 'fr' %}checked{% endif %}> French<br>
+        <input type="radio" name="lang" value="de" {% if lang == 'de' %}checked{% endif %}> German<br>
+        <input type="radio" name="lang" value="es" {% if lang == 'es' %}checked{% endif %}> Spanish<br>
+        <input type="radio" name="lang" value="pt" {% if lang == 'pt' %}checked{% endif %}> Portuguese<br>
+        <input type="radio" name="lang" value="ja" {% if lang == 'ja' %}checked{% endif %}> Japanese<br>
+        <input type="radio" name="lang" value="it" {% if lang == 'it' %}checked{% endif %}> Italian<br>
         <br>
         <button type="button" id="start-listening-btn" class="hidden">Start Listening</button>
         <button type="button" id="download-btn" class="hidden">Download Model</button>
