@@ -1,6 +1,6 @@
 # 🖐️ Viberr – Feel the Words
 
-**Viberr** is a real-time speech-to-vibration translation system for the deaf and hard-of-hearing. It transforms spoken language into finger-based vibration patterns using a unique 5-bit binary encoding system — enabling users to feel and interpret speech through touch.
+**Viberr** is a real-time speech-to-vibration translation system designed for the deaf and hard-of-hearing. It converts spoken language into a tactile pattern using a unique 5-bit binary encoding — allowing users to feel and interpret speech through simulated finger vibrations.
 
 > A new universal tactile language – powered by binary, driven by empathy.
 
@@ -30,7 +30,13 @@ VIBRA_TRAINER_WEB/
 ├── mappings/
 │   └── binary_map.json        # Binary letter mapping (A–Z)
 │
-├── models/
+├── models/                    # Vosk STT models (multi-language)
+│   ├── vosk-model-en-us-0.42-gigaspeech/
+│   ├── vosk-model-hi-0.22/
+│   ├── vosk-model-de-0.21/
+│   ├── vosk-model-it-0.22/
+│   ├── vosk-model-ja-0.22/
+│   └── vosk-model-ru-0.42/
 │
 ├── static/
 │   ├── script.js              # JS logic (UI, speed, animation)
@@ -41,9 +47,6 @@ VIBRA_TRAINER_WEB/
 │
 ├── viberr.git/                # Local Git repository metadata
 └── __pycache__/               # Python build cache
-```
-
----
 ```
 
 ---
@@ -111,15 +114,17 @@ git clone https://github.com/yourusername/viberr.git
 cd viberr
 ```
 
-2. Download a Vosk model (e.g., small English):
+2. Download Vosk models from:
    https://alphacephei.com/vosk/models
+
+   Place them inside the `models/` folder.
 
 3. Run the app:
 ```bash
 python app.py
 ```
 
-4. Open the web interface at:
+4. Open your browser at:
 ```
 http://localhost:5000
 ```
