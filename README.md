@@ -31,12 +31,6 @@ VIBRA_TRAINER_WEB/
 │   └── binary_map.json        # Binary letter mapping (A–Z)
 │
 ├── models/                    # Vosk STT models (multi-language)
-│   ├── vosk-model-en-us-0.42-gigaspeech/
-│   ├── vosk-model-hi-0.22/
-│   ├── vosk-model-de-0.21/
-│   ├── vosk-model-it-0.22/
-│   ├── vosk-model-ja-0.22/
-│   └── vosk-model-ru-0.42/
 │
 ├── static/
 │   ├── script.js              # JS logic (UI, speed, animation)
