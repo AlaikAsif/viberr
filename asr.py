@@ -10,7 +10,7 @@ from googletrans import Translator
 import threading
 import subprocess
 from translate_util import translate_to_english
-from recognizer import ASR, asr_stream_listen, register_asr_instance, unregister_asr_instance, terminate_all_asr_instances
+from recognizer import ASR, register_asr_instance, unregister_asr_instance, terminate_all_asr_instances
 
 LANG_MODELS = {
     'en': 'models/vosk-model-en-us-0.42-gigaspeech',

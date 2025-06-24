@@ -1,9 +1,10 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
 from asr import multi_asr_listen, LANG_MODELS, cleanup_unused_models, ensure_model_downloaded, get_model_progress, is_model_ready, get_model_status_info
-from recognizer import asr_stream_listen
+from recognizer import ASR
 import os
 import time
 import threading
+import json  # for SSE messages
 
 app = Flask(__name__)
 
@@ -57,26 +58,30 @@ def listen_route():
             return jsonify(get_model_status_info(lang))
 
 @app.route('/stream')
-def stream_route():
-    lang = request.args.get('lang') or 'en'
+def stream():
+    lang = request.args.get('lang', 'en')
     if lang not in LANG_MODELS:
-        lang = 'en'
-    print(f"[DEBUG] /stream route called with lang={lang}")
-    model_path = LANG_MODELS.get(lang)
-    print(f"[DEBUG] /stream route - model_path resolved: {model_path}")
-    # Check if model is ready
-    if lang != 'en' and not is_model_ready(lang):
-        print(f"[DEBUG] /stream route - Model for {lang} not ready, redirecting to wait page")
-        ensure_model_downloaded(lang)
-        next_url = url_for('index', lang=lang)
-        return render_template('wait.html', next_url=next_url, models_in_use=lang)
-    # Clean up unused models before running recognition
-    cleanup_unused_models(lang)
-    print(f"[DEBUG] /stream route - Calling asr_stream_listen with lang={lang} and model_path={model_path}")
-    def event_stream():
-        for result in asr_stream_listen(lang, model_path):
-            yield f'data: {result}\n\n'
-    return Response(event_stream(), mimetype='text/event-stream')
+        return Response(status=400)
+
+    model_path = LANG_MODELS[lang]
+
+    if not is_model_ready(lang):
+        def error_generate():
+            yield f"data: {json.dumps({'status': 'error', 'message': 'Model not ready on disk.'})}\n\n"
+        return Response(error_generate(), mimetype='text/event-stream')
+
+    def generate():
+        try:
+            asr = ASR(lang, model_path)
+            for result in asr.recognize_stream():
+                yield f"data: {json.dumps(result)}\n\n"
+        except Exception as e:
+            print(f"[ERROR] /stream: Failed to initialize or run ASR for lang={lang}. Error: {e}")
+            yield f"data: {json.dumps({'status': 'error', 'message': 'Failed to start recognition stream.'})}\n\n"
+        finally:
+            print(f"[DEBUG] /stream generate() for {lang} finished.")
+
+    return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/recognize', methods=['POST'])
 def recognize_route():
@@ -88,15 +93,15 @@ def recognize_route():
     print(f"[DEBUG] /recognize route POST - Model ready for {lang}, starting recognition")
     cleanup_unused_models(lang)
     result = multi_asr_listen([lang])
-    
-    if lang != 'en':
-        english_result = result['all_results'][lang][1]
-        return f'<h2>Model: {models_in_use}</h2>' \
-               f'<h2>English Translation:</h2><p>{english_result}</p>'
-    else:
-        english_result = result['all_results'][lang][0]
-        return f'<h2>Model: {models_in_use}</h2>' \
-               f'<h2>Transcription:</h2><p>{english_result}</p>'
+    # Get both original and translated results
+    orig, trans = result['all_results'][lang]
+    # Return both transcription and translation as JSON object
+    return jsonify({
+        'model': models_in_use,
+        'language': lang,
+        'transcription': orig,
+        'translation': trans
+    })
 
 @app.route('/model_progress')
 def model_progress_route():

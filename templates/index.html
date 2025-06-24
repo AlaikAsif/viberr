@@ -158,7 +158,7 @@
                         // Show alert when model becomes ready (but not for English or not_downloaded)
                         if (data.status === 'ready' && lang !== 'en' && data.just_loaded) {
                             console.log(`[pollModelStatus] Model just loaded for ${lang}, showing alert`);
-                            alert(`${lang.toUpperCase()} model is now loaded and ready to use!`);
+                            // Alert removed as per user request
                         } else if (data.status === 'ready' && lang !== 'en') {
                             console.log(`[pollModelStatus] Model ready for ${lang}, but just_loaded=${data.just_loaded}`);
                         }
@@ -215,18 +215,90 @@
                     alert('Listening is already in progress. Please wait or terminate first.');
                     return;
                 }
-                
-                console.log('[start-listening-btn.onclick] Model is ready. Submitting form to /recognize.');
+                pollingStatus = false; // Stop any background polling
+                const lang = getSelectedLang();
                 listeningInProgress = true;
-                updateControls('ready'); // Update button state
-                
-                // Start polling to catch when model loads into memory
-                if (!pollingStatus) {
-                    console.log('[start-listening-btn.onclick] Starting polling to catch model loading');
-                    setTimeout(pollModelStatus, 500); // Start polling after a short delay
-                }
-                
-                document.getElementById('modelForm').submit();
+                updateControls('ready'); // disable start button
+
+                // Show "in use" notification and prepare live output
+                const modelInUseEl = document.getElementById('modelInUse');
+                modelInUseEl.textContent = `Preparing stream for ${lang.toUpperCase()}...`;
+                modelInUseEl.style.display = 'block';
+                modelInUseEl.style.color = 'green'; // Reset color on new attempt
+
+                const liveOutput = document.getElementById('liveOutput');
+                liveOutput.textContent = '';
+
+                // Start Server-Sent Events
+                const eventSource = new EventSource(`/stream?lang=${lang}`);
+
+                eventSource.onmessage = function(e) {
+                    const data = JSON.parse(e.data);
+                    const modelStatusBar = document.getElementById('modelStatusBar');
+                    const statusText = document.getElementById('modelStatusText');
+                    const progressBar = document.getElementById('modelProgressBar');
+                    const progressBarInner = document.getElementById('modelProgressBarInner');
+                    const mainLoadingContainer = document.getElementById('mainLoadingContainer');
+                    const mainLoadingLabel = document.getElementById('mainLoadingLabel');
+                    const modelInUseEl = document.getElementById('modelInUse');
+                    const liveOutput = document.getElementById('liveOutput');
+
+                    if (data.status) {
+                        modelStatusBar.style.display = 'block';
+                        statusText.textContent = data.message;
+                        modelInUseEl.textContent = data.message; // Also update the main H2 status
+
+                        switch (data.status) {
+                            case 'downloading':
+                            case 'extracting':
+                                progressBar.style.display = 'block';
+                                progressBarInner.style.width = (data.progress || 0) + '%';
+                                progressBarInner.textContent = (data.progress || 0) + '%';
+                                mainLoadingContainer.style.display = 'none';
+                                mainLoadingLabel.style.display = 'none';
+                                break;
+                            case 'loading':
+                                progressBar.style.display = 'none';
+                                mainLoadingContainer.style.display = 'block';
+                                mainLoadingLabel.textContent = data.message;
+                                mainLoadingLabel.style.display = 'block';
+                                statusText.textContent = data.message;
+                                break;
+                            case 'ready_and_listening':
+                                // Model is loaded into memory and listening
+                                modelStatusBar.style.display = 'none';
+                                mainLoadingContainer.style.display = 'none';
+                                mainLoadingLabel.style.display = 'none';
+                                modelInUseEl.textContent = data.message; // Use message from server
+                                liveOutput.textContent = "--- Model ready and waiting for audio ---\n\n";
+                                break;
+                            case 'ready': // Ready on disk (from polling)
+                                statusText.textContent = data.message;
+                                progressBar.style.display = 'none';
+                                break;
+                        }
+                    } else {
+                        // No status key, so it's a transcription result
+                        modelStatusBar.style.display = 'none';
+                        mainLoadingContainer.style.display = 'none';
+                        mainLoadingLabel.style.display = 'none';
+                        if (liveOutput.textContent.startsWith("--- Model ready and waiting for audio ---")) {
+                            liveOutput.textContent = "";
+                        }
+                        liveOutput.textContent += JSON.stringify(data, null, 2) + '\n';
+                        liveOutput.scrollTop = liveOutput.scrollHeight;
+                    }
+                };
+
+                eventSource.onerror = function(err) {
+                    console.error('SSE error:', err);
+                    const modelInUseEl = document.getElementById('modelInUse');
+                    modelInUseEl.textContent = 'Error with server connection. Please terminate and try again.';
+                    modelInUseEl.style.color = 'red';
+                    listeningInProgress = false;
+                    updateControls('ready'); // Re-enable start button if possible
+                    eventSource.close();
+                };
             };
 
             document.getElementById('download-btn').onclick = function() {
@@ -312,6 +384,11 @@
     <p>You can select only one language. The system will run the selected model and return the result in English if needed.</p>
     <p id="loadingMsg" style="display:none;color:blue;font-weight:bold;">If this is your first time using a language, the model will be downloaded and extracted. Please wait, this may take a few minutes...</p>
     <p id="modelsInUse" style="display:none;color:green;font-weight:bold;"></p>
+
+    <!-- Live Output Section -->
+    <h2 id="modelInUse" style="display:none;color:green;">Model is in use...</h2>
+    <pre id="liveOutput" style="background:#f9f9f9;border:1px solid #ccc;padding:10px;height:200px;overflow:auto;white-space:pre-wrap;"></pre>
+    
     <script src="/static/script.js"></script>
 </body>
 </html>
