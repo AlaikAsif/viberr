@@ -166,3 +166,51 @@ Free to use, modify, and build upon.
 
 Have an idea or want to improve Viberr?  
 Feel free to fork the repo, raise issues, or submit PRs.
+
+---
+
+# Viberr Trainer Web App
+
+A Flask web application for real-time speech recognition and translation using Vosk ASR models. Users can select a language, download models on demand, and see live transcription and translation results.
+
+## Project Structure
+
+- `app.py` — Flask app and all web routes. No ASR/model logic here.
+- `asr.py` — Model download, extraction, progress, and status helpers. No Flask or audio code.
+- `recognizer.py` — ASR class and all audio/recognition/streaming logic. No Flask or download code.
+- `translate_util.py` — Translation helpers.
+- `download_model.py` — Standalone script for model download (optional).
+- `templates/index.html` — Main HTML template for the web UI.
+- `static/` — JavaScript and CSS files for the frontend.
+- `requirements.txt` — All Python dependencies.
+
+## How to Run
+
+1. Install dependencies:
+   ```sh
+   pip install -r requirements.txt
+   ```
+2. Download any required Vosk models (the app can do this on demand).
+3. Start the Flask app:
+   ```sh
+   flask run
+   ```
+4. Open your browser to `http://localhost:5000`.
+
+## Features
+- Download and manage Vosk models for multiple languages.
+- Live progress/status bar for model download/extraction/loading.
+- Real-time transcription and translation results.
+- Clean separation of backend logic for maintainability.
+
+## File Responsibilities
+- **app.py**: Only Flask routes and web logic.
+- **asr.py**: Model download, extraction, and status.
+- **recognizer.py**: Audio streaming and recognition.
+- **translate_util.py**: Translation utilities.
+- **templates/**: HTML templates.
+- **static/**: JS and CSS.
+
+---
+
+For more details, see comments/docstrings in each file.

@@ -1,0 +1,8 @@
+flask
+vosk
+pyaudio
+noisereduce
+numpy
+requests
+googletrans==4.0.0rc1
+spacy
